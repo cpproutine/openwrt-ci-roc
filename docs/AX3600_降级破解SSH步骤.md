@@ -99,7 +99,7 @@ ssh root@192.168.31.1
 
 ## 第五步（可选）：固化 SSH（仅为留在原厂固件使用时才需要）
 
-**如果目标就是刷 LibWrt 自制固件，此步可完全跳过**——拿到 SSH 后直接进入 initramfs 刷机流程即可，因为刷机过程中 SSH 一次性使用。
+**如果目标就是刷 LibWrt 自制固件，此步可完全跳过**——拿到 SSH 后直接按 `docs/固件核对报告.md` 第四节在原厂系统里刷入 stock 固件（SSH 只在这一步用到一次），因为刷机过程中 SSH 一次性使用。
 
 若想长期保留原厂固件并让 SSH 在升级/重启后仍有效（修改 bdata 分区）：
 
@@ -119,11 +119,13 @@ ssh root@192.168.31.1
 
 ## 与刷机方案的衔接
 
-SSH 可用后，按《AX3600_LibWrt_NSS_完整方案.md》继续：
+SSH 可用后，按 **`docs/固件核对报告.md` 第四节**继续（stock 布局定稿流程，**不走 initramfs**）：
 
-1. 把云编译 Release（Tag `AX3600-Stock`）里的 **initramfs 镜像**（文件名含 `initramfs`）传到路由器 `/tmp/`；
-2. `dd` 写入 kernel 分区或用 `sysupgrade` 方式引导 initramfs 后，再刷正式 UBI 固件（具体以方案文档对应章节为准）；
-3. 首启注意：CI 定制固件的管理地址是 **http://192.168.2.1**（CI 脚本改过默认 IP），首启 Wi-Fi 为 `AX3600-Setup` / `AX3600-Setup-9pQ7xM2k`。
+1. 备份全部分区到电脑（`docs/刷机准备清单.md` 第 6 节，必做）；
+2. 上传 **`*-squashfs-factory.ubi`**（32.38 MiB，不要误选 initramfs/sysupgrade 文件）到 `/tmp/`；
+3. `ubiformat` 写**非当前启动**的 rootfs 分区 → `&&` 链接设置启动标志（含重置 `flag_boot_success=0` 和 try_sys 失败标志）→ `reboot`；
+4. initramfs 产物（`*-initramfs-uImage.itb`）仅用于内存启动/救援，不是首次刷入步骤；
+5. 首启注意：管理地址 **http://192.168.2.1**（CI 脚本改过默认 IP），Wi-Fi 为 `AX3600-Setup` / `AX3600-Setup-9pQ7xM2k`。
 
 ---
 

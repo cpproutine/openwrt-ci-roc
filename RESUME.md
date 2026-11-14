@@ -66,22 +66,43 @@ sing-box 35.6 MB（已关 GVISOR/TAILSCALE/ACME/WIREGUARD）；NSS 512M 档 + �
    ```
 5. **刷写（stock 布局专用，保留原厂回退，不用 wiki 的 sysupgrade -n）**：
    ```sh
-   nvram get flag_boot_rootfs      # 0 → 刷对侧 mtd13；1 → 刷对侧 mtd12
-   cat /proc/mtd                   # 人工确认 rootfs=12 / rootfs_1=13
+   # 先记录原值（回退用，务必抄下来）
+   nvram get flag_boot_rootfs; nvram get flag_last_success
+   nvram get flag_boot_success; nvram get flag_try_sys1_failed; nvram get flag_try_sys2_failed
 
-   # 若返回 0：
-   ubiformat /dev/mtd13 -y -f /tmp/libwrt-qualcommax-ipq807x-xiaomi_ax3600-stock-squashfs-factory.ubi -s 2048 -O 2048
-   nvram set flag_boot_rootfs=1; nvram set flag_last_success=1; nvram set flag_boot_success=1; nvram commit
+   # 确认分区索引（人工核对 rootfs=12 / rootfs_1=13，mtd 编号以实际输出为准）
+   cat /proc/mtd
 
-   # 若返回 1：mtd12 与 flag_boot_rootfs=0，命令同理
-   reboot
+   # 若 flag_boot_rootfs=0 → 刷对侧 mtd13（全部 && 链接：ubiformat 失败则不会写任何启动标志）
+   ubiformat /dev/mtd13 -y -f /tmp/libwrt-qualcommax-ipq807x-xiaomi_ax3600-stock-squashfs-factory.ubi -s 2048 -O 2048 \
+     && nvram set flag_try_sys2_failed=0 \
+     && nvram set flag_boot_rootfs=1 \
+     && nvram set flag_last_success=1 \
+     && nvram set flag_boot_success=0 \
+     && nvram commit \
+     && reboot
+
+   # 若 flag_boot_rootfs=1 → 刷对侧 mtd12（flag_try_sys1_failed=0，其余标志置 0，同理）
+   ubiformat /dev/mtd12 -y -f /tmp/libwrt-qualcommax-ipq807x-xiaomi_ax3600-stock-squashfs-factory.ubi -s 2048 -O 2048 \
+     && nvram set flag_try_sys1_failed=0 \
+     && nvram set flag_boot_rootfs=0 \
+     && nvram set flag_last_success=0 \
+     && nvram set flag_boot_success=0 \
+     && nvram commit \
+     && reboot
    ```
+   > 标志设置与 LibWrt `platform.sh` 的 stock 变体逐项一致（该代码升级时也是重置 `flag_boot_success=0` + 重置 try_sys 失败标志）。
+   > **不要预先把 flag_boot_success 设为 1**：固件内 `etc/init.d/bootcount` 会在新系统**真正启动成功后**自己 `fw_setenv flag_boot_success 1`——提前置 1 会伪造成功状态，削弱 U-Boot 对失败分区的回退重试。
 6. **首启**：管理地址 **http://192.168.2.1**（不是 1.1），Wi-Fi SSID `AX3600-Setup` / 密码 `AX3600-Setup-9pQ7xM2k`（登录后立即改）
 7. **验收**（对照 `docs/固件核对报告.md`）：
-   - `ubus call system board` 确认版本
-   - `luci` → NSS 状态页确认 NSS 加速生效（`/usr/sbin/nssinfo` 或 `echo "dump" > /proc/sys/kernel/qca-nss-drv/...`）
+   - `ubus call system board` 确认版本、`cat /proc/mtd` 记录实际分区表
+   - **overlay 实测**（不要用估算值）：`df -h /overlay` + `ubinfo -a` + `mount | grep overlay`
+   - **NSS 加速确认**（固件内实际存在的工具，镜像已验证）：`lsmod | grep -E 'qca-nss-drv|ecm'`（两模块必须 loaded）+ `nss_stats`（输出 NSS 统计）+ LuCI NSS 状态页
    - 网口测速对比原厂；Passwall 配 sing-box 节点测代理；rtp2httpd 组播转 HTTP（端口 5140）
-   - 出问题回退：切回 flag_boot_rootfs 原值 reboot 即回到原厂
+   - 回退（按所在系统选命令）：
+     - 仍在**原厂**系统：`nvram set flag_boot_rootfs=<记录的原值>; nvram commit; reboot`
+     - 已进入 **OpenWrt**（LibWrt 内）：`fw_setenv flag_boot_rootfs <原值>; fw_setenv flag_last_success <原值>; fw_setenv flag_boot_success 1; reboot`
+     - 都进不去：官方修复工具（网线）或 UART——见 `docs/刷机准备清单.md` 第 6.3 节五级矩阵
 
 ## 四、关键参数备忘
 
@@ -90,7 +111,7 @@ sing-box 35.6 MB（已关 GVISOR/TAILSCALE/ACME/WIREGUARD）；NSS 512M 档 + �
 | 原厂 SSH | `192.168.31.1`，root / admin（需 ssh-rsa 兼容参数，见上） |
 | 定制固件管理地址 | **`http://192.168.2.1`** |
 | 首启 Wi-Fi | SSID `AX3600-Setup` / 密码 `AX3600-Setup-9pQ7xM2k` |
-| overlay 剩余 | 约 3.3 MiB —— 改配置够用，**后期装大包装不下**，组件已编译期固化 |
+| overlay 剩余 | **估算约 3 MiB**（分区 35.75 − 镜像 32.38 − 坏块预留）；**首启后以 `df -h /overlay` 和 `ubinfo -a` 实测为准** —— 改配置够用，**后期装大包装不下**，组件已编译期固化 |
 | rtp2httpd | 端口 5140，`/status` `/playlist.m3u` `/player` |
 | 官方 1.0.17 固件 | `http://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/r3600/miwifi_r3600_firmware_5da25_1.0.17.bin`（sha256 `dfbe3473…`） |
 | 救砖 | 小米官方修复工具（只认官方签名固件）+ 网线 → 这正是你要换网线机器的原因 |
