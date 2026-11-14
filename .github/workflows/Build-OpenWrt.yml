@@ -9,6 +9,10 @@ on:
       repo_branch:
         required: true
         type: string
+      repo_commit:
+        required: false
+        type: string
+        description: "Optional: pin the source to an exact commit for reproducible builds. Fetched after branch clone (branch still required for shallow fetch)."
       config_file:
         required: true
         type: string
@@ -123,6 +127,7 @@ jobs:
       env:
         REPO_URL: ${{ inputs.repo_url }}
         REPO_BRANCH: ${{ inputs.repo_branch }}
+        REPO_COMMIT: ${{ inputs.repo_commit }}
         KERNEL_FILE: ${{ inputs.kernel_file }}
       run: |
         df -hT "$GITHUB_WORKSPACE"
@@ -143,6 +148,20 @@ jobs:
           sleep $((attempt * 5))
         done
         cd "$OPENWRT_PATH"
+        # 固定提交：保证构建严格可复现（对应方案"固定构建基线"要求）
+        if [ -n "$REPO_COMMIT" ]; then
+          for attempt in 1 2 3; do
+            if git fetch --depth 1 origin "$REPO_COMMIT" && git checkout --detach --force "$REPO_COMMIT"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Error: failed to checkout pinned commit $REPO_COMMIT after $attempt attempts" >&2
+              exit 1
+            fi
+            echo "::warning::Pinned commit fetch failed (attempt $attempt/3); retrying."
+            sleep $((attempt * 5))
+          done
+        fi
         VERSION_INFO="$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")"
         {
           echo "version_info<<EOF"

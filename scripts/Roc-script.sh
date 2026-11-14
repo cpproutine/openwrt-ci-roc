@@ -338,3 +338,18 @@ fi
 
 ./scripts/feeds update -i -a
 ./scripts/feeds install -a
+
+mkdir -p files/etc/uci-defaults
+cat > files/etc/uci-defaults/99-wifi-firstboot <<'WIFI_EOF'
+#!/bin/sh
+
+uci set wireless.@wifi-device[0].disabled='0'
+uci set wireless.@wifi-iface[0].disabled='0'
+uci set wireless.@wifi-iface[0].ssid='AX3600-Setup'
+uci set wireless.@wifi-iface[0].encryption='psk2'
+uci set wireless.@wifi-iface[0].key='AX3600-Setup-9pQ7xM2k'
+uci commit wireless
+exit 0
+WIFI_EOF
+# 必须加可执行位：CI 默认 umask 022 生成 0644，非可执行的 uci-defaults 脚本首启不会被执行
+chmod 0755 files/etc/uci-defaults/99-wifi-firstboot
