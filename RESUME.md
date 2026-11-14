@@ -15,16 +15,29 @@
 | 路由器 | 原厂 1.0.17，**SSH 已破解**（root / admin） |
 | 路由器分区备份 | **尚未执行**（见第三节，开刷前必须做） |
 
-## 二、最终固件核对结果（v2 瘦身版）
+## 二、固件核对与深度验证结果（全部通过 ✅）
 
-- `factory.ubi` = **33,947,648 B（32.38 MiB）**，stock 分区容量 35.75 MiB → **余量 +3.38 MiB，可刷入** ✅
-- `sysupgrade.bin` = 32,604,439 B（31.09 MiB）✅
-- sing-box 二进制 55.6 → 35.6 MB；rootfs 未压缩 110 → 92.6 MB；squashfs 25.66 MB
-- buildinfo 确认：`CLASH_API/QUIC/UTLS`=y；`ACME/GVISOR/TAILSCALE/WIREGUARD`=not set
-- NSS：512MB 内存档（MEDIUM）、固件 11.4、Wi-Fi 卸载开 / Mesh 关；无 flow offload / packet steering
-- 包总数 298，方案外组件（Xray/SmartDNS/samba4/docker/openclash…）**零命中**
-- `/etc/uci-defaults/99-wifi-firstboot` 已确认在镜像内（首启 SSID `AX3600-Setup`）
-- SHA256 详见 `docs/SHA256SUMS.txt`（刷机前务必校验）
+**尺寸（v2 瘦身版）**：`factory.ubi` 32.38 MiB（分区 35.75 MiB，余量 +3.38 MiB 可刷）；`sysupgrade.bin` 31.09 MiB；
+sing-box 35.6 MB（已关 GVISOR/TAILSCALE/ACME/WIREGUARD）；NSS 512M 档 + 固件 11.4 + 卸载开/Mesh 关；
+包 298 个，方案外组件零命中。SHA256 见 `docs/SHA256SUMS.txt`。
+
+**结构级深检（2026-11-14 18:50 追加）：**
+
+| 检查项 | 结果 |
+|---|---|
+| UBI 结构 | 259/259 PEB 全部有效（EC/VID header 完整） |
+| kernel 卷（PEB2–46） | FIT 结构完整；kernel-1（gzip/arm64/5.64MB）**CRC32+SHA1 双哈希匹配**；fdt-1 DTB magic 正确、双哈希匹配 |
+| 内核可解压 | 14.16MB，`Linux version 6.12.116`，与 rootfs `/lib/modules/6.12.116`（149 个 .ko）**完全匹配** |
+| DTB 设备 | `xiaomi,ax3600-stock` / 型号 "AX3600 (stock layout)" ✅ |
+| squashfs | 完整解包 1843 文件、176 目录**零错误** |
+| 二进制架构 | busybox / sing-box(35.6MB) / rtp2httpd / kmodloader 全部 **AArch64 ELF** ✅ |
+| NSS | ecm.ko、qca-nss-drv.ko、qca-nss-dp.ko 等模块在位；`99-qca-nss-ecm`、`992_set-nss-load.sh`、`993_set-ecm-conntrack.sh` 首启脚本在位 |
+| 首启 Wi-Fi | `99-wifi-firstboot` 在位 ✅ |
+| sysupgrade 元数据 | `supported_devices:["xiaomi,ax3600-stock"]`、`revision: r0-6c363ce`（与固定提交一致）✅ |
+| kernel 卷容量 | FIT 5,692,032 B vs 卷容量 5,713,920 B，余量 21 KB（紧但够） |
+
+**结论：镜像结构、内核、rootfs、二进制、元数据自洽完整，具备真实刷入和启动条件。**
+剩余无法离线验证的只有两点：无线校准加载（依赖本机 ART）和 NSS 加速实测——首次开机验收时确认。
 
 ## 三、换机后的行动清单（按顺序）
 
@@ -35,17 +48,18 @@
    ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa root@192.168.31.1
    ```
    密码 `admin`（若重置过则按 `docs/AX3600_降级破解SSH步骤.md` 重走一遍）
-3. **⚠️ 先备份分区（必做，5 分钟）**：
-   ```sh
-   cat /proc/mtd
-   mkdir -p /tmp/bak
-   nanddump -f /tmp/bak/mtd8_ART.img /dev/mtd8
-   nanddump -f /tmp/bak/mtd9_bdata.img /dev/mtd9
+3. **⚠️ 全分区备份（必做，约 15 分钟，这是"官方救砖都救不回来"场景的唯一保险）**：
+   原厂 SSH 里逐分区流式备份到电脑（`cmd /c` 保证二进制重定向安全，**不要在 PowerShell 原生 `>`**）：
+   ```powershell
+   cmd /c "ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.31.1 cat /proc/mtd"   # 先记录分区表
+   cmd /c "ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.31.1 dd if=/dev/mtd8 bs=131072" > mtd8_ART.img
+   cmd /c "ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.31.1 dd if=/dev/mtd9 bs=131072" > mtd9_bdata.img
+   cmd /c "ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.31.1 dd if=/dev/mtd10 bs=131072" > mtd10_APPSBL.img
+   # ……对 /proc/mtd 每个分区各来一条（尤其 rootfs / rootfs_1）；dd 只读零风险
+   # 校验：电脑侧 certutil -hashfile <文件> SHA256 对比路由器侧 sha256sum /dev/mtdN
    ```
-   拉回电脑（注意 `-O`，老 dropbear 不支持 SFTP）：
-   ```
-   scp -O -o HostKeyAlgorithms=+ssh-rsa root@192.168.31.1:/tmp/bak/*.img .
-   ```
+   备份存两块介质。**特别原因**：官方修复工具**不覆盖 `0:ART`（无线校准）和 `0:bdata`（SN/MAC）**，这两个分区损坏后官方救砖也无能为力，只有备份能救。
+   恢复手段矩阵详见 `docs/刷机准备清单.md` 第 6.3 节（nvram 切回 / mtd write / 官方修复 / ART 恢复 / UART 五级）。
 4. **上传固件**（在 PowerShell，电脑连路由器 Wi-Fi）：
    ```
    scp -O -o HostKeyAlgorithms=+ssh-rsa libwrt-...-factory.ubi root@192.168.31.1:/tmp/
