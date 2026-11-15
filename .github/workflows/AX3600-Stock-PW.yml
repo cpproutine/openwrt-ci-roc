@@ -1,0 +1,35 @@
+name: AX3600-Stock-PW
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  Build:
+    uses: ./.github/workflows/Build-OpenWrt.yml
+    permissions:
+      contents: write
+      actions: write
+    with:
+      repo_url: https://github.com/laipeng668/openwrt-6.x.git
+      repo_branch: 25.12-nss
+      repo_commit: 6c363ced06ee6dc0c49092a8da087e1dc45f17c9
+      config_file: configs/AX3600-Stock-Min.config
+      general_config_file: configs/General-Min-Passwall.config
+      firmware_tag: AX3600-Stock-PW
+      kernel_file: kernel-6.12
+      artifact_prefix: AX3600-Stock-PW
+      manifest_file: libwrt-qualcommax-ipq807x.manifest
+      remove_sqm_scripts_nss: true
+      release_summary: >-
+        Xiaomi AX3600 (stock 原厂分区) —— Min 底座 + Passwall(nftables 透明代理)。
+        与 AX3600-Stock-Min 同一设备配置、同一固定提交 6c363ced，仅通用配置不同：
+        新增 luci-app-passwall、kmod-nft-tproxy / kmod-nft-socket / kmod-nf-tproxy / kmod-nf-socket、
+        kmod-tun、kmod-inet-diag。passwall 源码由 Roc-script.sh 从 Openwrt-Passwall 组织仓库克隆编译。
+        sing-box / xray / haproxy / smartdns 等核心大件全部显式关闭（aarch64 上默认 y），
+        二进制走 mtd14 常驻方案，不进镜像。目标镜像 21-23MiB，给 UBI rootfs_data 留约 10MiB，
+        确保首启 wifi-scripts 能写入 /etc/config/wireless（这是 Stock 完整版刷完无 WiFi 的根因）。
+        首启管理地址 http://192.168.2.1，Wi-Fi SSID AX3600-Setup / 密码 AX3600-Setup-9pQ7xM2k。
