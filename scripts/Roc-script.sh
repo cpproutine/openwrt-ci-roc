@@ -353,3 +353,34 @@ exit 0
 WIFI_EOF
 # 必须加可执行位：CI 默认 umask 022 生成 0644，非可执行的 uci-defaults 脚本首启不会被执行
 chmod 0755 files/etc/uci-defaults/99-wifi-firstboot
+
+# ============================================================
+# NSS 源码镜像兜底（仅当启用 passwall 时执行，其他构建不受影响）
+#
+# 背景：启用 passwall 会新增 tproxy 等内核模块，导致内核与全部 kmod 重新编译，
+#       qca-nss-drv / qca-nss-clients / qca-nss-ecm 等必须重新下载源码。
+#       而 git.codelinaro.org 已不可用（DNS 可解析、TCP 可连，但 268s 无响应），
+#       所有官方 tarball 镜像（immortalwrt / openwrt sources）对该版本均 404。
+#
+# 方案：改用 CodeLinaro-mirror 组织的 GitHub 镜像仓库，命名规则为
+#       clo/qsdk/oss/lklm/<name>  ->  qsdk_oss_lklm_<name>
+#       commit 完全一致（已验证 nss-drv@53e5863、nss-clients@51be82d、qca-nss-ecm@30fbfa4）。
+#       镜像 clone 后重新打包，tarball hash 必然不同，故把 PKG_MIRROR_HASH 置为 skip
+#       （OpenWrt 的 wrap_mirror 对 "skip" 有显式豁免）。
+# ============================================================
+if package_enabled luci-app-passwall; then
+  echo "==> [nss-mirror] passwall 构建：切换 NSS 源码到 GitHub 镜像"
+  nss_makefile_list="$(grep -rl 'git\.codelinaro\.org' feeds package 2>/dev/null --include=Makefile || true)"
+  nss_mirror_count=0
+  for nss_makefile in $nss_makefile_list; do
+    # 先处理 lklm/<name>，再处理 oss/<name>；顺序不能反，否则 lklm 路径会被第二条截断
+    sed -i \
+      -e 's#https://git\.codelinaro\.org/clo/qsdk/oss/lklm/\([^/]*\)\(\.git\)\?#https://github.com/CodeLinaro-mirror/qsdk_oss_lklm_\1\2#g' \
+      -e 's#https://git\.codelinaro\.org/clo/qsdk/oss/\([^/]*\)\(\.git\)\?#https://github.com/CodeLinaro-mirror/qsdk_oss_\1\2#g' \
+      -e 's#^\([[:space:]]*\)PKG_MIRROR_HASH:=.*#\1PKG_MIRROR_HASH:=skip#' \
+      "$nss_makefile"
+    nss_mirror_count=$((nss_mirror_count + 1))
+  done
+  echo "==> [nss-mirror] 已处理 ${nss_mirror_count} 个 Makefile"
+  grep -rh 'CodeLinaro-mirror' feeds package 2>/dev/null --include=Makefile | sort -u | head -12 || true
+fi
