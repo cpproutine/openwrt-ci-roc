@@ -16,6 +16,11 @@ on:
       config_file:
         required: true
         type: string
+      general_config_file:
+        required: false
+        type: string
+        default: configs/General.config
+        description: "Optional: general config appended after the device config (later lines override earlier ones)."
       firmware_tag:
         required: true
         type: string
@@ -66,6 +71,8 @@ jobs:
   Build:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    env:
+      GENERAL_CONFIG_FILE: ${{ inputs.general_config_file }}
     permissions:
       contents: read
       actions: read
@@ -190,7 +197,7 @@ jobs:
       id: variables
       env:
         ARTIFACT_PREFIX: ${{ inputs.artifact_prefix }}
-        CUSTOMIZATION_HASH: ${{ hashFiles('scripts/Roc-script.sh', 'configs/General.config', inputs.config_file) }}
+        CUSTOMIZATION_HASH: ${{ hashFiles('scripts/Roc-script.sh', inputs.general_config_file, inputs.config_file) }}
         REPO_URL: ${{ inputs.repo_url }}
         REPO_BRANCH: ${{ inputs.repo_branch }}
         CONFIG_FILE: ${{ inputs.config_file }}

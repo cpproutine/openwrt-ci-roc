@@ -1,0 +1,33 @@
+name: AX3600-Stock-Min
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  Build:
+    uses: ./.github/workflows/Build-OpenWrt.yml
+    permissions:
+      contents: write
+      actions: write
+    with:
+      repo_url: https://github.com/laipeng668/openwrt-6.x.git
+      repo_branch: 25.12-nss
+      repo_commit: 6c363ced06ee6dc0c49092a8da087e1dc45f17c9
+      config_file: configs/AX3600-Stock-Min.config
+      general_config_file: configs/General-Min.config
+      firmware_tag: AX3600-Stock-Min
+      kernel_file: kernel-6.12
+      artifact_prefix: AX3600-Stock-Min
+      manifest_file: libwrt-qualcommax-ipq807x.manifest
+      remove_sqm_scripts_nss: true
+      release_summary: >-
+        Xiaomi AX3600 (stock layout, 原厂分区) 精简首刷固件：LibWrt 25.12-nss 固定提交 6c363ced。
+        仅含 NSS 驱动/ECM/MCS + NSS 固件 11.4 + ath11k 512MB 档 + LuCI + luci-app-package-manager + 基础网络/防火墙。
+        不含 Passwall/sing-box/rtp2httpd（rtp2httpd 与 luci-app-rtp2httpd 以 =m 编译，
+        从本 Release 的 AX3600-Stock-Min.Packages.tar.gz 内取 .apk 后装：apk add --allow-untrusted /tmp/*.apk）。
+        未启用软件/硬件 Flow Offloading 与 Packet Steering。首启管理地址 http://192.168.2.1，
+        Wi-Fi SSID AX3600-Setup / 密码 AX3600-Setup-9pQ7xM2k。
